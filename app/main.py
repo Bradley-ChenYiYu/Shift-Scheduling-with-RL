@@ -1,1 +1,86 @@
-print("Python Docker workspace is up ✅")
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
+from sb3_contrib.common.maskable.evaluation import evaluate_policy
+from sb3_contrib.common.maskable.utils import get_action_masks
+from stable_baselines3.common.monitor import Monitor
+
+try:
+	from app.rl_env import ShiftSchedulingEnv
+except ModuleNotFoundError:
+	from rl_env import ShiftSchedulingEnv
+
+
+def load_input_tables(base_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+	engineer_path = base_dir / "Engineer_List.csv"
+	demand_path = base_dir / "Shift_Demand.csv"
+
+	engineer_df = pd.read_csv(engineer_path)
+	demand_df = pd.read_csv(demand_path)
+	return engineer_df, demand_df
+
+
+def train_model(
+	engineer_df: pd.DataFrame,
+	demand_df: pd.DataFrame,
+	timesteps: int = 5_000,
+	model_path: str = "ppo_mask",
+) -> MaskablePPO:
+	env = Monitor(ShiftSchedulingEnv(engineer_df=engineer_df, demand_df=demand_df))
+	eval_env = Monitor(ShiftSchedulingEnv(engineer_df=engineer_df, demand_df=demand_df))
+
+	eval_callback = MaskableEvalCallback(
+		eval_env,
+		best_model_save_path=".",
+		log_path=".",
+		eval_freq=1_000,
+		n_eval_episodes=5,
+		deterministic=True,
+	)
+
+	model = MaskablePPO("MlpPolicy", env, gamma=0.4, seed=32, verbose=1)
+	model.learn(total_timesteps=timesteps, callback=eval_callback)
+
+	mean_reward, std_reward = evaluate_policy(
+		model,
+		eval_env,
+		n_eval_episodes=20,
+		warn=False,
+	)
+	print(f"Evaluation reward: mean={mean_reward:.3f}, std={std_reward:.3f}")
+
+	model.save(model_path)
+	return model
+
+
+def rollout_once(model: MaskablePPO, engineer_df: pd.DataFrame, demand_df: pd.DataFrame) -> None:
+	env = ShiftSchedulingEnv(engineer_df=engineer_df, demand_df=demand_df)
+	obs, _ = env.reset()
+
+	while True:
+		action_masks = get_action_masks(env)
+		action, _ = model.predict(obs, action_masks=action_masks, deterministic=True)
+		obs, reward, terminated, truncated, _ = env.step(int(action))
+		if terminated or truncated:
+			break
+
+	print("Final schedule:")
+	print(env.render())
+
+
+def main() -> None:
+	data_dir = Path(__file__).parent / "data"
+	engineer_df, demand_df = load_input_tables(data_dir)
+
+	train_model(engineer_df=engineer_df, demand_df=demand_df, timesteps=100_000, model_path="ppo_mask")
+	model = MaskablePPO.load("ppo_mask")
+
+	rollout_once(model, engineer_df=engineer_df, demand_df=demand_df)
+
+
+if __name__ == "__main__":
+	main()

@@ -1,4 +1,4 @@
-# AI Scheduling
+# Shift-Scheduling-with-RL  
 
 ## Usage
 
@@ -8,6 +8,12 @@ This workspace uses Docker Compose to run a persistent Python development contai
 
 ```bash
 docker compose -f docker/compose.yaml up -d
+```
+
+### Rebuid image and start container
+
+```bash
+docker compose -f docker/compose.yaml up -d --build
 ```
 
 ### Stop container
@@ -27,6 +33,30 @@ docker compose -f docker/compose.yaml exec python-app bash
 ```bash
 python app/main.py
 ```
+
+### Optional: compile check
+
+```bash
+python -m compileall app/main.py
+```
+
+### Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Train and run masked PPO scheduler
+
+```bash
+python app/main.py
+```
+
+This will:
+- Load `app/data/Engineer_List.csv` and `app/data/Shift_Demand.csv`
+- Train a Masked PPO model for scheduling
+- Save the model as `ppo_mask.zip`
+- Run one inference rollout and print the final schedule
 
 ## RL Model Design  
 

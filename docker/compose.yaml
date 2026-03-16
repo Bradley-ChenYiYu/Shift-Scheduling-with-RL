@@ -4,6 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: python-docker-workspace
+    gpus: all
     volumes:
       - ..:/workspace
     working_dir: /workspace
