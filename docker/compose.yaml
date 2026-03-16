@@ -1,0 +1,12 @@
+services:
+  python-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: python-docker-workspace
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    command: sleep infinity
+    stdin_open: true
+    tty: true
