@@ -42,7 +42,7 @@ def train_model(
 		deterministic=True,
 	)
 
-	model = MaskablePPO("MlpPolicy", env, gamma=0.4, seed=32, verbose=1)
+	model = MaskablePPO("MlpPolicy", env, gamma=0.4, seed=32, verbose=1, tensorboard_log = "./ppo_mask_tensorboard/")
 	model.learn(total_timesteps=timesteps, callback=eval_callback)
 
 	mean_reward, std_reward = evaluate_policy(
@@ -76,8 +76,8 @@ def main() -> None:
 	data_dir = Path(__file__).parent / "data"
 	engineer_df, demand_df = load_input_tables(data_dir)
 
-	train_model(engineer_df=engineer_df, demand_df=demand_df, timesteps=100_000, model_path="ppo_mask")
-	model = MaskablePPO.load("ppo_mask")
+	train_model(engineer_df=engineer_df, demand_df=demand_df, timesteps=500_000, model_path="ppo_mask")
+	model = MaskablePPO.load("best_model")
 
 	rollout_once(model, engineer_df=engineer_df, demand_df=demand_df)
 

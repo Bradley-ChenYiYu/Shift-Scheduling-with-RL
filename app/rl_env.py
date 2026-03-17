@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import gymnasium as gym
 import numpy as np
 import pandas as pd
+import warnings
 
 
 SHIFT_TO_ID = {"D": 0, "E": 1, "N": 2, "O": 3}
@@ -46,7 +47,9 @@ class ShiftSchedulingEnv(gym.Env):
         self.locked = self.predefined != -1
 
         self.action_space = gym.spaces.Discrete(4)
+        # Observation: [i-th row], [j-th column], [required_D, required_E, required_N], [assigned_D, assigned_E, assigned_N]
         obs_size = self.num_days + self.num_workers + 3 + 3
+        # Row and column values are -1 for unassigned, otherwise the shift ID: 0~3.
         self.observation_space = gym.spaces.Box(
             low=-1.0,
             high=3.0,
@@ -149,6 +152,15 @@ class ShiftSchedulingEnv(gym.Env):
             int(np.sum(day_assignments == SHIFT_TO_ID["E"])),
             int(np.sum(day_assignments == SHIFT_TO_ID["N"])),
         )
+
+    def _demand_gap_penalty(self) -> float:
+        penalty = 0.0
+        for day_idx in range(self.num_days):
+            assigned = self._assigned_counts(day_idx)
+            demand = self.demand[day_idx]
+            for shift_id in WORKING_SHIFT_IDS:
+                penalty += 0.01 * self.num_workers * (demand[shift_id] - assigned[shift_id])
+        return float(penalty)
 
     def action_masks(self) -> np.ndarray:
         if self.terminated:
@@ -253,7 +265,12 @@ class ShiftSchedulingEnv(gym.Env):
         reward = 0.0
 
         masks = self.action_masks()
+        # This should not happen if the action mask is applied correctly, send a warning and assign a penalty if it does.
         if not masks[action]:
+            warnings.warn(
+                f"Selected masked action {action} at worker {worker_idx}, day {day_idx}",
+                stacklevel=2,
+            )
             reward -= 1.0
             valid_actions = np.where(masks)[0]
             if len(valid_actions) > 0:
@@ -283,6 +300,7 @@ class ShiftSchedulingEnv(gym.Env):
                 if row_idx not in self.evaluated_rows:
                     reward -= self._row_level_penalty(row_idx)
                     self.evaluated_rows.add(row_idx)
+            reward -= self._demand_gap_penalty()
             return self._get_obs(), float(reward), True, False, {}
 
         self.current_i, self.current_j = next_i, next_j
