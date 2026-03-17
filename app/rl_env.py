@@ -126,10 +126,13 @@ class ShiftSchedulingEnv(gym.Env):
         return self._get_obs(), {}
 
     def _find_next_cell(self, start_i: int, start_j: int) -> tuple[int, int]:
-        flat_start = start_i * self.num_days + (start_j + 1)
+        if start_j < 0:
+            flat_start = 0
+        else:
+            flat_start = start_j * self.num_workers + (start_i + 1)
         for index in range(flat_start, self.num_workers * self.num_days):
-            worker_idx = index // self.num_days
-            day_idx = index % self.num_days
+            day_idx = index // self.num_workers
+            worker_idx = index % self.num_workers
             if self.schedule[worker_idx, day_idx] == -1 and not self.locked[worker_idx, day_idx]:
                 return worker_idx, day_idx
         return -1, -1
@@ -290,7 +293,7 @@ class ShiftSchedulingEnv(gym.Env):
 
         next_i, next_j = self._find_next_cell(worker_idx, day_idx)
 
-        if next_i != worker_idx and worker_idx not in self.evaluated_rows:
+        if worker_idx not in self.evaluated_rows and np.all(self.schedule[worker_idx, ~self.locked[worker_idx]] != -1):
             reward -= self._row_level_penalty(worker_idx)
             self.evaluated_rows.add(worker_idx)
 
