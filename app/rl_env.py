@@ -3,6 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import gymnasium as gym
+from config import (
+    DEMAND_GAP_SCALE,
+    MIN_TOTAL_OFF_DAYS,
+    MIN_WEEKEND_OFF_DAYS,
+    PENALTY_BAD_TRANSITION,
+    PENALTY_CONSECUTIVE_WORK,
+    PENALTY_DEMAND_EXCEEDED,
+    PENALTY_FEW_CONSECUTIVE_OFF_BLOCKS,
+    PENALTY_INSUFFICIENT_TOTAL_OFF,
+    PENALTY_INSUFFICIENT_WEEKEND_OFF,
+    PENALTY_INVALID_ACTION,
+    PENALTY_NON_DEFAULT_SHIFT,
+    PENALTY_SINGLE_DAY_LEAVE,
+    REWARD_DEMAND_MET,
+)
 import numpy as np
 import pandas as pd
 import warnings
@@ -162,7 +177,7 @@ class ShiftSchedulingEnv(gym.Env):
             assigned = self._assigned_counts(day_idx)
             demand = self.demand[day_idx]
             for shift_id in WORKING_SHIFT_IDS:
-                penalty += 0.01 * self.num_workers * (demand[shift_id] - assigned[shift_id])
+                penalty += DEMAND_GAP_SCALE * self.num_workers * (demand[shift_id] - assigned[shift_id])
         return float(penalty)
 
     def action_masks(self) -> np.ndarray:
@@ -201,22 +216,22 @@ class ShiftSchedulingEnv(gym.Env):
         default_shift = self.engineers[worker_idx].default_shift
 
         if shift_id != SHIFT_TO_ID["O"] and shift_id != default_shift:
-            penalty += 0.2
+            penalty += PENALTY_NON_DEFAULT_SHIFT
 
         if day_idx > 0:
             previous_shift = self.schedule[worker_idx, day_idx - 1]
 
             if previous_shift == SHIFT_TO_ID["N"] and shift_id in (SHIFT_TO_ID["D"], SHIFT_TO_ID["E"]):
-                penalty += 1.0
+                penalty += PENALTY_BAD_TRANSITION
             if previous_shift == SHIFT_TO_ID["E"] and shift_id == SHIFT_TO_ID["D"]:
-                penalty += 1.0
+                penalty += PENALTY_BAD_TRANSITION
             if previous_shift in (SHIFT_TO_ID["D"], SHIFT_TO_ID["E"]) and shift_id == SHIFT_TO_ID["N"]:
-                penalty += 1.0
+                penalty += PENALTY_BAD_TRANSITION
 
         if shift_id in WORKING_SHIFT_IDS and day_idx >= 5:
             recent = self.schedule[worker_idx, day_idx - 5 : day_idx]
             if np.all(np.isin(recent, list(WORKING_SHIFT_IDS))):
-                penalty += 1.0
+                penalty += PENALTY_CONSECUTIVE_WORK
 
         return penalty
 
@@ -250,13 +265,13 @@ class ShiftSchedulingEnv(gym.Env):
         weekend_off = int(np.sum(off_mask & self.is_weekend))
 
         if consecutive_off_instances < 2:
-            penalty += 0.1
-        if total_off < 9:
-            penalty += 0.1
-        if weekend_off < 4:
-            penalty += 0.1
+            penalty += PENALTY_FEW_CONSECUTIVE_OFF_BLOCKS
+        if total_off < MIN_TOTAL_OFF_DAYS:
+            penalty += PENALTY_INSUFFICIENT_TOTAL_OFF
+        if weekend_off < MIN_WEEKEND_OFF_DAYS:
+            penalty += PENALTY_INSUFFICIENT_WEEKEND_OFF
         if has_single_day_leave:
-            penalty += 0.1
+            penalty += PENALTY_SINGLE_DAY_LEAVE
 
         return penalty
 
@@ -274,7 +289,7 @@ class ShiftSchedulingEnv(gym.Env):
                 f"Selected masked action {action} at worker {worker_idx}, day {day_idx}",
                 stacklevel=2,
             )
-            reward -= 1.0
+            reward -= PENALTY_INVALID_ACTION 
             valid_actions = np.where(masks)[0]
             if len(valid_actions) > 0:
                 action = int(valid_actions[0])
@@ -287,9 +302,9 @@ class ShiftSchedulingEnv(gym.Env):
         assigned = self._assigned_counts(day_idx)
         demand = self.demand[day_idx]
         if action in WORKING_SHIFT_IDS and assigned[action] <= demand[action]:
-            reward += 0.05
+            reward += REWARD_DEMAND_MET
         elif action in WORKING_SHIFT_IDS and assigned[action] > demand[action]:
-            reward -= 0.05
+            reward -= PENALTY_DEMAND_EXCEEDED
 
         next_i, next_j = self._find_next_cell(worker_idx, day_idx)
 
