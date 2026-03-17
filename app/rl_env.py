@@ -306,8 +306,10 @@ class ShiftSchedulingEnv(gym.Env):
         self.current_i, self.current_j = next_i, next_j
         return self._get_obs(), float(reward), False, False, {}
 
-    def render(self):
+    def render(self, output_path: str = "out_Engineer_List.csv"):
         schedule_labels = np.vectorize(lambda value: ID_TO_SHIFT.get(int(value), ""))(self.schedule)
         frame = pd.DataFrame(schedule_labels, columns=self.date_columns)
         frame.insert(0, "Person", [engineer.name for engineer in self.engineers])
+        frame.insert(1, "Default Shift", self.engineer_df["Default Shift"].astype(str).tolist())
+        frame.to_csv(output_path, index=False)
         return frame
