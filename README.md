@@ -80,6 +80,15 @@ This will:
 - Weight = 0.1: Fewer than 4 weekend days off per month.  
 - Weight = 0.1: Single-day leave (non-consecutive days off).  
 
+### Separate Loss Scoring
+
+Loss scoring is implemented outside the environment class in `app/loss_scoring.py`:
+
+- `calculate_loss_breakdown(schedule: np.ndarray, default_shifts: np.ndarray, is_weekend: np.ndarray) -> dict[str, float]`
+- `calculate_loss_score(schedule: np.ndarray, default_shifts: np.ndarray, is_weekend: np.ndarray) -> float`
+
+This is independent from the reward calculation in `ShiftSchedulingEnv`.
+
 ### Action  
 
 - Assign day shift (D)  

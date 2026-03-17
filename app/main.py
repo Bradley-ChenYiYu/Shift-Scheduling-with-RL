@@ -11,8 +11,10 @@ from stable_baselines3.common.monitor import Monitor
 
 try:
 	from app.rl_env import ShiftSchedulingEnv
+	from app.loss_scoring import print_loss_report
 except ModuleNotFoundError:
 	from rl_env import ShiftSchedulingEnv
+	from loss_scoring import print_loss_report
 
 
 def load_input_tables(base_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -69,14 +71,19 @@ def rollout_once(model: MaskablePPO, engineer_df: pd.DataFrame, demand_df: pd.Da
 			break
 
 	print("Final schedule:")
-	print(env.render())
+	schedule_output_path = "out_Engineer_List.csv"
+	print(env.render(output_path=schedule_output_path))
+	print_loss_report(
+		schedule_csv_path=schedule_output_path,
+		demand_csv_path=str(Path(__file__).parent / "data" / "Shift_Demand.csv"),
+	)
 
 
 def main() -> None:
 	data_dir = Path(__file__).parent / "data"
 	engineer_df, demand_df = load_input_tables(data_dir)
 
-	train_model(engineer_df=engineer_df, demand_df=demand_df, timesteps=400_000, model_path="ppo_mask") # 500_000
+	# train_model(engineer_df=engineer_df, demand_df=demand_df, timesteps=400_000, model_path="ppo_mask") # 500_000
 	model = MaskablePPO.load("best_model")
 
 	rollout_once(model, engineer_df=engineer_df, demand_df=demand_df)
