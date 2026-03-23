@@ -3,3 +3,5 @@ __pycache__/
 *.zip
 *tensorboard*
 out*
+*log.*
+log*

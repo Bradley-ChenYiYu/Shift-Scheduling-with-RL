@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from sb3_contrib import MaskablePPO
 
 try:
+    from app.main import load_input_tables, rollout_once
     from app.loss_scoring import ScheduleLossEvaluator, print_loss_report
 except ModuleNotFoundError:
+    from main import load_input_tables, rollout_once
     from loss_scoring import ScheduleLossEvaluator, print_loss_report
 
 
@@ -43,6 +46,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    data_dir = Path(__file__).parent / "data"
+    engineer_df, demand_df = load_input_tables(data_dir)
+    model = MaskablePPO.load("best_model")
+    rollout_once(model, engineer_df=engineer_df, demand_df=demand_df)
     evaluator = ScheduleLossEvaluator()
     print(f"Schedule : {args.schedule}")
     print(f"Demand   : {args.demand}")
