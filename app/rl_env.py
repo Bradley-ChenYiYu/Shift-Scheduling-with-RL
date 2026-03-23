@@ -62,8 +62,10 @@ class ShiftSchedulingEnv(gym.Env):
         self.locked = self.predefined != -1
 
         self.action_space = gym.spaces.Discrete(4)
-        # Observation: [i-th row], [j-th column], [required_D, required_E, required_N], [assigned_D, assigned_E, assigned_N]
-        obs_size = self.num_days + self.num_workers + 3 + 3
+        # Observation:
+        # [i-th row], [j-th column], [required_D, required_E, required_N],
+        # [assigned_D, assigned_E, assigned_N], [is_weekend(day_1..day_n)]
+        obs_size = self.num_days + self.num_workers + 3 + 3 + self.num_days
         # Row and column values are -1 for unassigned, otherwise the shift ID: 0~3.
         self.observation_space = gym.spaces.Box(
             low=-1.0,
@@ -160,8 +162,9 @@ class ShiftSchedulingEnv(gym.Env):
         col = self.schedule[:, self.current_j].astype(np.float32)
         required = self.demand[self.current_j].astype(np.float32)
         assigned = np.array(self._assigned_counts(self.current_j), dtype=np.float32)
+        weekend_flags = self.is_weekend.astype(np.float32)
 
-        return np.concatenate([row, col, required, assigned]).astype(np.float32)
+        return np.concatenate([row, col, required, assigned, weekend_flags]).astype(np.float32)
 
     def _assigned_counts(self, day_idx: int) -> tuple[int, int, int]:
         day_assignments = self.schedule[:, day_idx]
