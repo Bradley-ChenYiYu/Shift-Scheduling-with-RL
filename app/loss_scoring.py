@@ -7,6 +7,11 @@ import pandas as pd
 SHIFT_TO_ID = {"D": 0, "E": 1, "N": 2, "O": 3}
 WORKING_SHIFT_IDS = {SHIFT_TO_ID["D"], SHIFT_TO_ID["E"], SHIFT_TO_ID["N"]}
 
+PERSON_COLUMN_ALIASES = ["Person", "人員"]
+DEFAULT_SHIFT_COLUMN_ALIASES = ["Default Shift", "班別群組(*第一碼為群組代碼第二碼之後為可backup群組)"]
+DEMAND_DATE_COLUMN_ALIASES = ["Date"]
+WEEKEND_COLUMN_ALIASES = ["if_weekend", "IfWeekend"]
+
 
 class ScheduleLossEvaluator:
     def __init__(
@@ -37,6 +42,15 @@ class ScheduleLossEvaluator:
         self.min_total_off_days = min_total_off_days
         self.min_weekend_off_days = min_weekend_off_days
         self.min_consecutive_off_instances = min_consecutive_off_instances
+
+    @staticmethod
+    def _resolve_column(frame: pd.DataFrame, aliases: list[str], column_role: str) -> str:
+        for alias in aliases:
+            if alias in frame.columns:
+                return alias
+        raise ValueError(
+            f"Missing {column_role} column. Expected one of: {aliases}. Actual columns: {list(frame.columns)}"
+        )
 
     def _count_consecutive_work_violations(self, row: np.ndarray) -> int:
         violations = 0
@@ -98,7 +112,9 @@ class ScheduleLossEvaluator:
         for value in default_shifts:
             shift_label = str(value).strip().upper()
             if shift_label not in SHIFT_TO_ID:
-                raise ValueError(f"Invalid default shift: {shift_label}")
+                shift_label = shift_label[:1]
+            if shift_label not in SHIFT_TO_ID:
+                raise ValueError(f"Invalid default shift: {value}")
             values.append(SHIFT_TO_ID[shift_label])
         return np.array(values, dtype=np.int32)
 
@@ -193,21 +209,24 @@ class ScheduleLossEvaluator:
         schedule_df = pd.read_csv(schedule_csv_path)
         demand_df = pd.read_csv(demand_csv_path)
 
-        required_schedule_columns = {"Person", "Default Shift"}
-        missing_schedule_columns = required_schedule_columns - set(schedule_df.columns)
-        if missing_schedule_columns:
-            raise ValueError(f"Schedule CSV missing columns: {missing_schedule_columns}")
+        person_column = self._resolve_column(schedule_df, PERSON_COLUMN_ALIASES, "schedule person")
+        default_shift_column = self._resolve_column(
+            schedule_df,
+            DEFAULT_SHIFT_COLUMN_ALIASES,
+            "schedule default shift",
+        )
+        demand_date_column = self._resolve_column(demand_df, DEMAND_DATE_COLUMN_ALIASES, "demand date")
+        weekend_column = self._resolve_column(demand_df, WEEKEND_COLUMN_ALIASES, "demand weekend")
 
-        required_demand_columns = {"Date", "if_weekend"}
-        missing_demand_columns = required_demand_columns - set(demand_df.columns)
-        if missing_demand_columns:
-            raise ValueError(f"Demand CSV missing columns: {missing_demand_columns}")
-
-        date_columns = [column for column in schedule_df.columns if column not in ["Person", "Default Shift"]]
+        date_columns = [
+            column
+            for column in schedule_df.columns
+            if column not in [person_column, default_shift_column]
+        ]
         if not date_columns:
             raise ValueError("Schedule CSV must contain date columns.")
 
-        demand_dates = list(demand_df["Date"].astype(str))
+        demand_dates = list(demand_df[demand_date_column].astype(str))
         if [str(column) for column in date_columns] != demand_dates:
             raise ValueError(
                 "Date columns mismatch between schedule CSV and demand CSV. "
@@ -215,9 +234,9 @@ class ScheduleLossEvaluator:
             )
 
         schedule = self._shift_labels_to_ids(schedule_df, date_columns)
-        default_shifts = self._default_shift_labels_to_ids(schedule_df["Default Shift"])
+        default_shifts = self._default_shift_labels_to_ids(schedule_df[default_shift_column])
         is_weekend = (
-            demand_df["if_weekend"].fillna("").astype(str).str.strip().str.upper() == "Y"
+            demand_df[weekend_column].fillna("").astype(str).str.strip().str.upper() == "Y"
         ).to_numpy(dtype=bool)
 
         return self.evaluate_from_arrays(

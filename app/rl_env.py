@@ -27,6 +27,14 @@ SHIFT_TO_ID = {"D": 0, "E": 1, "N": 2, "O": 3}
 ID_TO_SHIFT = {value: key for key, value in SHIFT_TO_ID.items()}
 WORKING_SHIFT_IDS = {SHIFT_TO_ID["D"], SHIFT_TO_ID["E"], SHIFT_TO_ID["N"]}
 
+PERSON_COLUMN_ALIASES = ["Person", "人員"]
+DEFAULT_SHIFT_COLUMN_ALIASES = ["Default Shift", "班別群組(*第一碼為群組代碼第二碼之後為可backup群組)"]
+DEMAND_DATE_COLUMN_ALIASES = ["Date"]
+WEEKEND_COLUMN_ALIASES = ["if_weekend", "IfWeekend"]
+DAY_DEMAND_COLUMN_ALIASES = ["D", "Day"]
+EVENING_DEMAND_COLUMN_ALIASES = ["E", "Afternoon"]
+NIGHT_DEMAND_COLUMN_ALIASES = ["N", "Night"]
+
 
 @dataclass
 class EngineerConfig:
@@ -43,7 +51,35 @@ class ShiftSchedulingEnv(gym.Env):
         self.engineer_df = engineer_df.copy()
         self.demand_df = demand_df.copy()
 
-        self.date_columns = [column for column in self.engineer_df.columns if column not in ["Person", "Default Shift"]]
+        self.person_column = self._resolve_column(self.engineer_df, PERSON_COLUMN_ALIASES, "person")
+        self.default_shift_column = self._resolve_column(
+            self.engineer_df,
+            DEFAULT_SHIFT_COLUMN_ALIASES,
+            "default shift",
+        )
+        self.demand_date_column = self._resolve_column(
+            self.demand_df,
+            DEMAND_DATE_COLUMN_ALIASES,
+            "demand date",
+        )
+        self.weekend_column = self._resolve_column(self.demand_df, WEEKEND_COLUMN_ALIASES, "weekend")
+        self.day_demand_column = self._resolve_column(self.demand_df, DAY_DEMAND_COLUMN_ALIASES, "day demand")
+        self.evening_demand_column = self._resolve_column(
+            self.demand_df,
+            EVENING_DEMAND_COLUMN_ALIASES,
+            "evening demand",
+        )
+        self.night_demand_column = self._resolve_column(
+            self.demand_df,
+            NIGHT_DEMAND_COLUMN_ALIASES,
+            "night demand",
+        )
+
+        self.date_columns = [
+            column
+            for column in self.engineer_df.columns
+            if column not in [self.person_column, self.default_shift_column]
+        ]
         if not self.date_columns:
             raise ValueError("Engineer_List.csv must contain date columns.")
 
@@ -53,9 +89,11 @@ class ShiftSchedulingEnv(gym.Env):
         self._validate_input_tables()
 
         self.engineers = self._build_engineer_config()
-        self.demand = self.demand_df[["D", "E", "N"]].to_numpy(dtype=np.int32)
+        self.demand = self.demand_df[
+            [self.day_demand_column, self.evening_demand_column, self.night_demand_column]
+        ].to_numpy(dtype=np.int32)
         self.is_weekend = (
-            self.demand_df["if_weekend"].fillna("").astype(str).str.strip().str.upper() == "Y"
+            self.demand_df[self.weekend_column].fillna("").astype(str).str.strip().str.upper() == "Y"
         ).to_numpy(dtype=bool)
 
         self.predefined = self._build_predefined_schedule()
@@ -80,18 +118,17 @@ class ShiftSchedulingEnv(gym.Env):
         self.terminated = False
         self.evaluated_rows: set[int] = set()
 
+    @staticmethod
+    def _resolve_column(frame: pd.DataFrame, aliases: list[str], column_role: str) -> str:
+        for alias in aliases:
+            if alias in frame.columns:
+                return alias
+        raise ValueError(
+            f"Missing {column_role} column. Expected one of: {aliases}. Actual columns: {list(frame.columns)}"
+        )
+
     def _validate_input_tables(self) -> None:
-        expected_engineer = {"Person", "Default Shift"}
-        missing_engineer = expected_engineer - set(self.engineer_df.columns)
-        if missing_engineer:
-            raise ValueError(f"Engineer_List.csv missing columns: {missing_engineer}")
-
-        expected_demand = {"Date", "if_weekend", "D", "E", "N"}
-        missing_demand = expected_demand - set(self.demand_df.columns)
-        if missing_demand:
-            raise ValueError(f"Shift_Demand.csv missing columns: {missing_demand}")
-
-        demand_dates = list(self.demand_df["Date"].astype(str))
+        demand_dates = list(self.demand_df[self.demand_date_column].astype(str))
         engineer_dates = [str(column) for column in self.date_columns]
         if demand_dates != engineer_dates:
             raise ValueError(
@@ -102,13 +139,15 @@ class ShiftSchedulingEnv(gym.Env):
     def _build_engineer_config(self) -> list[EngineerConfig]:
         engineers: list[EngineerConfig] = []
         for _, row in self.engineer_df.iterrows():
-            default_shift_label = str(row["Default Shift"]).strip().upper()
+            default_shift_label = str(row[self.default_shift_column]).strip().upper()
             if default_shift_label not in SHIFT_TO_ID:
-                raise ValueError(f"Invalid default shift: {default_shift_label}")
+                default_shift_label = default_shift_label[:1]
+            if default_shift_label not in SHIFT_TO_ID:
+                raise ValueError(f"Invalid default shift: {row[self.default_shift_column]}")
 
             engineers.append(
                 EngineerConfig(
-                    name=str(row["Person"]),
+                    name=str(row[self.person_column]),
                     default_shift=SHIFT_TO_ID[default_shift_label],
                 )
             )
@@ -330,7 +369,7 @@ class ShiftSchedulingEnv(gym.Env):
     def render(self, output_path: str = "out_Engineer_List.csv"):
         schedule_labels = np.vectorize(lambda value: ID_TO_SHIFT.get(int(value), ""))(self.schedule)
         frame = pd.DataFrame(schedule_labels, columns=self.date_columns)
-        frame.insert(0, "Person", [engineer.name for engineer in self.engineers])
-        frame.insert(1, "Default Shift", self.engineer_df["Default Shift"].astype(str).tolist())
+        frame.insert(0, self.person_column, [engineer.name for engineer in self.engineers])
+        frame.insert(1, self.default_shift_column, self.engineer_df[self.default_shift_column].astype(str).tolist())
         frame.to_csv(output_path, index=False)
         return frame
