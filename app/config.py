@@ -53,5 +53,8 @@ PENALTY_INVALID_ACTION: float = 1.0
 # Reward for assigning a working shift that satisfies current demand.
 REWARD_DEMAND_MET: float = 0.05
 
+# Reward for assigning a day off immediately after a previous day off (O -> O).
+REWARD_CONSECUTIVE_DAY_OFF: float = 0.02
+
 # Penalty for assigning a working shift that exceeds current demand.
 PENALTY_DEMAND_EXCEEDED: float = 0.05
