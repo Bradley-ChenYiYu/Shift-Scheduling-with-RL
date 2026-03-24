@@ -17,6 +17,8 @@ from config import (
     PENALTY_NON_DEFAULT_SHIFT,
     PENALTY_SINGLE_DAY_LEAVE,
     REWARD_DEMAND_MET,
+    REWARD_CONSECUTIVE_DAY_OFF,
+    REWARD_WEEKEND_DAY_OFF,
 )
 import numpy as np
 import pandas as pd
@@ -340,6 +342,14 @@ class ShiftSchedulingEnv(gym.Env):
 
         reward -= self._transition_penalty(worker_idx, day_idx, int(action))
         self.schedule[worker_idx, day_idx] = int(action)
+
+        if action == SHIFT_TO_ID["O"] and day_idx > 0:
+            previous_shift = self.schedule[worker_idx, day_idx - 1]
+            if previous_shift == SHIFT_TO_ID["O"]:
+                reward += REWARD_CONSECUTIVE_DAY_OFF
+
+        if action == SHIFT_TO_ID["O"] and self.is_weekend[day_idx]:
+            reward += REWARD_WEEKEND_DAY_OFF
 
         assigned = self._assigned_counts(day_idx)
         demand = self.demand[day_idx]
