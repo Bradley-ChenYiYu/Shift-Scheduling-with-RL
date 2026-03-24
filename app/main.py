@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +16,57 @@ try:
 except ModuleNotFoundError:
 	from rl_env import ShiftSchedulingEnv
 	from loss_scoring import print_loss_report
+
+
+def parse_bool(value: str) -> bool:
+	value_normalized = str(value).strip().lower()
+	if value_normalized in {"1", "true", "t", "yes", "y"}:
+		return True
+	if value_normalized in {"0", "false", "f", "no", "n"}:
+		return False
+	raise argparse.ArgumentTypeError(f"Invalid boolean value: {value}. Use true/false.")
+
+
+def parse_args() -> argparse.Namespace:
+	default_data_dir = Path(__file__).parent / "data"
+	parser = argparse.ArgumentParser(description="Train or evaluate the shift scheduling model.")
+	parser.add_argument(
+		"--run-model",
+		type=parse_bool,
+		default=True,
+		help="Whether to run model training + rollout before evaluation (default: true). Use --run-model=false to evaluate an existing schedule CSV.",
+	)
+	parser.add_argument(
+		"--schedule",
+		type=str,
+		default="out_Engineer_List.csv",
+		help="Path to schedule CSV to write (when run-model=true) or read (when run-model=false).",
+	)
+	parser.add_argument(
+		"--demand",
+		type=str,
+		default=str(default_data_dir / "Shift_Demand.csv"),
+		help="Path to shift demand CSV for loss evaluation.",
+	)
+	parser.add_argument(
+		"--timesteps",
+		type=int,
+		default=500_000,
+		help="Training timesteps when run-model=true (default: 500000).",
+	)
+	parser.add_argument(
+		"--model-path",
+		type=str,
+		default="ppo_mask",
+		help="Model save prefix for training output (default: ppo_mask).",
+	)
+	parser.add_argument(
+		"--inference-model",
+		type=str,
+		default="best_model",
+		help="Model path used for rollout inference (default: best_model).",
+	)
+	return parser.parse_args()
 
 
 def load_input_tables(base_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -59,7 +111,12 @@ def train_model(
 	return model
 
 
-def rollout_once(model: MaskablePPO, engineer_df: pd.DataFrame, demand_df: pd.DataFrame) -> None:
+def rollout_once(
+	model: MaskablePPO,
+	engineer_df: pd.DataFrame,
+	demand_df: pd.DataFrame,
+	schedule_output_path: str = "out_Engineer_List.csv",
+) -> str:
 	env = ShiftSchedulingEnv(engineer_df=engineer_df, demand_df=demand_df)
 	obs, _ = env.reset()
 
@@ -71,22 +128,35 @@ def rollout_once(model: MaskablePPO, engineer_df: pd.DataFrame, demand_df: pd.Da
 			break
 
 	print("Final schedule:")
-	schedule_output_path = "out_Engineer_List.csv"
 	print(env.render(output_path=schedule_output_path))
-	print_loss_report(
-		schedule_csv_path=schedule_output_path,
-		demand_csv_path=str(Path(__file__).parent / "data" / "Shift_Demand.csv"),
-	)
+	return schedule_output_path
 
 
 def main() -> None:
+	args = parse_args()
 	data_dir = Path(__file__).parent / "data"
-	engineer_df, demand_df = load_input_tables(data_dir)
+	if args.run_model:
+		engineer_df, demand_df = load_input_tables(data_dir)
+		train_model(
+			engineer_df=engineer_df,
+			demand_df=demand_df,
+			timesteps=args.timesteps,
+			model_path=args.model_path,
+		)
+		model = MaskablePPO.load(args.inference_model)
+		schedule_path = rollout_once(
+			model,
+			engineer_df=engineer_df,
+			demand_df=demand_df,
+			schedule_output_path=args.schedule,
+		)
+	else:
+		schedule_path = args.schedule
 
-	train_model(engineer_df=engineer_df, demand_df=demand_df, timesteps=500_000, model_path="ppo_mask") # 500_000
-	model = MaskablePPO.load("best_model")
-
-	rollout_once(model, engineer_df=engineer_df, demand_df=demand_df)
+	print_loss_report(
+		schedule_csv_path=schedule_path,
+		demand_csv_path=args.demand,
+	)
 
 
 if __name__ == "__main__":

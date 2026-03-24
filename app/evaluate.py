@@ -17,10 +17,10 @@ from pathlib import Path
 from sb3_contrib import MaskablePPO
 
 try:
-    from app.main import load_input_tables, rollout_once
+    from app.main import load_input_tables, parse_bool, rollout_once
     from app.loss_scoring import ScheduleLossEvaluator, print_loss_report
 except ModuleNotFoundError:
-    from main import load_input_tables, rollout_once
+    from main import load_input_tables, parse_bool, rollout_once
     from loss_scoring import ScheduleLossEvaluator, print_loss_report
 
 
@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     default_data_dir = Path(__file__).parent / "data"
     parser = argparse.ArgumentParser(
         description="Evaluate a generated shift schedule against loss constraints."
+    )
+    parser.add_argument(
+        "--run-model",
+        type=parse_bool,
+        default=False,
+        help="Whether to run inference model first and generate schedule before evaluation (default: false).",
     )
     parser.add_argument(
         "--schedule",
@@ -41,15 +47,28 @@ def parse_args() -> argparse.Namespace:
         default=str(default_data_dir / "Shift_Demand.csv"),
         help="Path to the shift demand CSV (default: app/data/Shift_Demand.csv).",
     )
+    parser.add_argument(
+        "--inference-model",
+        type=str,
+        default="best_model",
+        help="Model path used for rollout inference when --run-model=true (default: best_model).",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    data_dir = Path(__file__).parent / "data"
-    engineer_df, demand_df = load_input_tables(data_dir)
-    model = MaskablePPO.load("best_model")
-    rollout_once(model, engineer_df=engineer_df, demand_df=demand_df)
+    if args.run_model:
+        data_dir = Path(__file__).parent / "data"
+        engineer_df, demand_df = load_input_tables(data_dir)
+        model = MaskablePPO.load(args.inference_model)
+        rollout_once(
+            model,
+            engineer_df=engineer_df,
+            demand_df=demand_df,
+            schedule_output_path=args.schedule,
+        )
+
     evaluator = ScheduleLossEvaluator()
     print(f"Schedule : {args.schedule}")
     print(f"Demand   : {args.demand}")

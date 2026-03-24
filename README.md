@@ -58,6 +58,14 @@ This will:
 - Save the model as `ppo_mask.zip`
 - Run one inference rollout and print the final schedule
 
+### Evaluate an existing schedule CSV without running the model
+
+You can evaluate directly via the evaluation script:
+
+```bash
+python app/evaluate.py --run-model=false --schedule out_Engineer_List.csv --demand app/data/Shift_Demand.csv
+```
+
 ## RL Model Design  
 
 ### Observation  
